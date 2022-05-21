@@ -19,6 +19,9 @@ contract Vesting is Ownable {
         uint64  lastClaimTime;
     }
 
+    /**
+     * NOTE Nhắn anh Hùng: Tên biến anh đặt hơi tối nghĩa nên em đặt tên lại
+     */
     ERC20   public  tokenContract;
     bool    public  isOpenedForClaim;
     uint8   public  firstReleasePercentage;
@@ -35,7 +38,9 @@ contract Vesting is Ownable {
     }
 
     event OpenClaim(uint64 timestamp);
+
     event CloseClaim(uint64 timestamp);
+
     event AddClaimer(address indexed claimerAddress, uint256 claimableAmount);
 
     /**
@@ -95,7 +100,7 @@ contract Vesting is Ownable {
     }
 
     /**
-     * NOTE Nhắn anh Hùng: em cảm thấy hàm fundVest k cần, tại token owner có thể gọi transfer để chuyển token trực tiếp cho Vesting contract,
+     * NOTE Nhắn anh Hùng: Em cảm thấy hàm fundVest k cần, tại token owner có thể gọi transfer để chuyển token trực tiếp cho Vesting contract,
      * phải approve rồi tranferFrom mất công hơn k cần thiết
      */
     function fundVest(uint256 amount) external onlyOwner {
