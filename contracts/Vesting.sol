@@ -19,18 +19,18 @@ contract Vesting is Ownable {
         uint64  lastClaimTime;
     }
 
-    ERC20   public  _tokenContract;
-    bool    public  _isOpenedForClaim;
-    uint8   public  _firstReleasePercentage;
-    uint64  public  _delayAfterFirstRelease;
-    uint8   public  _numberOfPeriodicClaim;
-    uint8   public  _periodicClaimPercentage;
-    uint64  public  _periodicClaimDuration;
-    uint256 public  _minimumTotalClaimableAmount;
+    ERC20   public  tokenContract;
+    bool    public  isOpenedForClaim;
+    uint8   public  firstReleasePercentage;
+    uint64  public  delayAfterFirstRelease;
+    uint8   public  numberOfPeriodicClaim;
+    uint8   public  periodicClaimPercentage;
+    uint64  public  periodicClaimDuration;
+    uint256 public  minimumTotalClaimableAmount;
     mapping(address => Claimer) private _claimerList;
     
     modifier onlyWhenOpenedForClaim {
-        require(_isOpenedForClaim, "Claim has not yet been opened or has been closed");
+        require(isOpenedForClaim, "Claim has not yet been opened or has been closed");
         _;
     }
 
@@ -60,32 +60,32 @@ contract Vesting is Ownable {
             uint64 delayAfterFirstRelease_,
             uint8 numberOfPeriodicClaim_,
             uint64 periodicClaimDuration_) {
-        _tokenContract = ERC20(tokenAddress_);
-        _isOpenedForClaim = false;
-        _firstReleasePercentage = firstReleasePercentage_;
-        _delayAfterFirstRelease = delayAfterFirstRelease_;
-        _numberOfPeriodicClaim = numberOfPeriodicClaim_;
-        _periodicClaimPercentage = SafeCast.toUint8(SafeMath.sub(100, _firstReleasePercentage)
-                                                            .div(_numberOfPeriodicClaim));
-        _periodicClaimDuration = periodicClaimDuration_;
+        tokenContract = ERC20(tokenAddress_);
+        isOpenedForClaim = false;
+        firstReleasePercentage = firstReleasePercentage_;
+        delayAfterFirstRelease = delayAfterFirstRelease_;
+        numberOfPeriodicClaim = numberOfPeriodicClaim_;
+        periodicClaimPercentage = SafeCast.toUint8(SafeMath.sub(100, firstReleasePercentage)
+                                                            .div(numberOfPeriodicClaim));
+        periodicClaimDuration = periodicClaimDuration_;
 
         /**
-         * @dev If total claimable amount of a specific claimer were smaller than _minimumTotalClaimableAmount,
+         * @dev If total claimable amount of a specific claimer were smaller than minimumTotalClaimableAmount,
          * either the first claim (release) amount or periodic claim amount of that claimer might be 0 (due to integer division).
          * This vesting contract doesn't allow those 2 amounts to be 0 at the moment.
          */
-        _minimumTotalClaimableAmount =
-            SafeMath.div(100, _firstReleasePercentage <= _periodicClaimPercentage ? _firstReleasePercentage : _periodicClaimPercentage)
+        minimumTotalClaimableAmount =
+            SafeMath.div(100, firstReleasePercentage <= periodicClaimPercentage ? firstReleasePercentage : periodicClaimPercentage)
                     .add(1);
     }
 
     function openClaim() public onlyOwner {
-        _isOpenedForClaim = true;
+        isOpenedForClaim = true;
         emit OpenClaim(SafeCast.toUint64(block.timestamp));
     }
 
     function closeClaim() public onlyOwner {
-        _isOpenedForClaim = false;
+        isOpenedForClaim = false;
         emit CloseClaim(SafeCast.toUint64(block.timestamp));
     }
 
@@ -94,17 +94,17 @@ contract Vesting is Ownable {
      * phải approve rồi tranferFrom mất công hơn k cần thiết
      */
     function fundVest(uint256 amount) external onlyOwner {
-        _tokenContract.transferFrom(msg.sender, address(this), amount);
+        tokenContract.transferFrom(msg.sender, address(this), amount);
     }
 
     function addClaimer(address claimerAddress, uint256 claimableAmount) external onlyOwner {
         require(_claimerList[claimerAddress].totalClaimableAmount == 0, "Claimer already exists");
 
         string memory errorMessage = string(bytes.concat("Claimable amount must be at least ",
-                                                        abi.encodePacked(_minimumTotalClaimableAmount),
+                                                        abi.encodePacked(minimumTotalClaimableAmount),
                                                         " ",
-                                                        bytes(_tokenContract.symbol()) ));  // Just string concatenate
-        require(claimableAmount >= _minimumTotalClaimableAmount, errorMessage);
+                                                        bytes(tokenContract.symbol()) ));  // Just string concatenate
+        require(claimableAmount >= minimumTotalClaimableAmount, errorMessage);
 
         Claimer memory claimer = Claimer(claimerAddress, claimableAmount, claimableAmount, 0, 0);
         _claimerList[claimerAddress] = claimer;
@@ -117,15 +117,15 @@ contract Vesting is Ownable {
         uint256 claimedAmount = 0;
         
         if (claimer.claimedTimes == 0) {
-            claimedAmount = claimer.totalClaimableAmount.mul(_firstReleasePercentage).div(100);
+            claimedAmount = claimer.totalClaimableAmount.mul(firstReleasePercentage).div(100);
         } else if (claimer.claimedTimes == 1) {
-            require(block.timestamp.sub(claimer.lastClaimTime) >= _delayAfterFirstRelease, "Elapsed time is not enough since first release");
-            claimedAmount = claimer.totalClaimableAmount.mul(_periodicClaimPercentage).div(100);
-        } else if (claimer.claimedTimes > 1 && claimer.claimedTimes < _numberOfPeriodicClaim) {
-            require(block.timestamp.sub(claimer.lastClaimTime) >= _periodicClaimDuration, "Elapsed time is not enough since last claim");
-            claimedAmount = claimer.totalClaimableAmount.mul(_periodicClaimPercentage).div(100);
-        } else if (claimer.claimedTimes == _numberOfPeriodicClaim) {
-            require(block.timestamp.sub(claimer.lastClaimTime) >= _periodicClaimDuration, "Elapsed time is not enough since last claim");
+            require(block.timestamp.sub(claimer.lastClaimTime) >= delayAfterFirstRelease, "Elapsed time is not enough since first release");
+            claimedAmount = claimer.totalClaimableAmount.mul(periodicClaimPercentage).div(100);
+        } else if (claimer.claimedTimes > 1 && claimer.claimedTimes < numberOfPeriodicClaim) {
+            require(block.timestamp.sub(claimer.lastClaimTime) >= periodicClaimDuration, "Elapsed time is not enough since last claim");
+            claimedAmount = claimer.totalClaimableAmount.mul(periodicClaimPercentage).div(100);
+        } else if (claimer.claimedTimes == numberOfPeriodicClaim) {
+            require(block.timestamp.sub(claimer.lastClaimTime) >= periodicClaimDuration, "Elapsed time is not enough since last claim");
             claimedAmount = claimer.remainingClaimableAmount;
         } else
             revert("Claimer has claimed all tokens");
@@ -133,7 +133,7 @@ contract Vesting is Ownable {
         claimer.remainingClaimableAmount -= claimedAmount;
         claimer.claimedTimes++;
         claimer.lastClaimTime = SafeCast.toUint64(block.timestamp);
-        _tokenContract.transfer(claimer.addr, claimedAmount);
+        tokenContract.transfer(claimer.addr, claimedAmount);
         emit Claim(claimer.addr, claimer.claimedTimes, claimedAmount, claimer.lastClaimTime);
     }
 }
