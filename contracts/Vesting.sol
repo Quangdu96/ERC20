@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
@@ -19,14 +19,15 @@ contract Vesting is Ownable {
         uint64  lastClaimTime;
     }
 
-    IERC20  _tokenContract;
-    mapping(address => Claimer) _claimerList;
-    bool    _isOpenedForClaim;
-    uint8   _firstReleasePercentage;
-    uint64  _delayAfterFirstRelease;
-    uint8   _numberOfPeriodicClaim;
-    uint8   _periodicClaimPercentage;
-    uint64  _periodicClaimDuration;
+    ERC20   public  _tokenContract;
+    bool    public  _isOpenedForClaim;
+    uint8   public  _firstReleasePercentage;
+    uint64  public  _delayAfterFirstRelease;
+    uint8   public  _numberOfPeriodicClaim;
+    uint8   public  _periodicClaimPercentage;
+    uint64  public  _periodicClaimDuration;
+    uint256 public  _minimumTotalClaimableAmount;
+    mapping(address => Claimer) private _claimerList;
     
     modifier onlyWhenOpenedForClaim {
         require(_isOpenedForClaim, "Claim has not yet been opened or has been closed");
@@ -47,26 +48,35 @@ contract Vesting is Ownable {
 
     /**
      * @dev constructor
-     * @param tokenAddress address of deployed token contract
-     * @param firstReleasePercentage percentage from which calculate the amount of tokens claimer receives in first claim (release), 1 = 1%
-     * @param delayAfterFirstRelease time duration the claimer must wait since first claim (release) to claim the second time
-     * @param numberOfPeriodicClaim number of claim the claimer must do AFTER THE FIRST CLAIM (RELEASE) to receive all the claimable tokens.
+     * @param tokenAddress_ address of deployed token contract
+     * @param firstReleasePercentage_ percentage from which calculate the amount of tokens claimer receives in first claim (release), 1 = 1%
+     * @param delayAfterFirstRelease_ time duration the claimer must wait since first claim (release) to claim the second time
+     * @param numberOfPeriodicClaim_ number of claim the claimer must do AFTER THE FIRST CLAIM (RELEASE) to receive total claimable tokens.
      * The claimer will receive all claimable tokens after (numberOfPeriodicClaim + 1) claims
-     * @param periodicClaimDuration time duration the claimer must wait between periodic claims
+     * @param periodicClaimDuration_ time duration the claimer must wait between periodic claims
      */
-    constructor(address tokenAddress,
-            uint8 firstReleasePercentage,
-            uint64 delayAfterFirstRelease,
-            uint8 numberOfPeriodicClaim,
-            uint64 periodicClaimDuration) {
-        _tokenContract = IERC20(tokenAddress);
+    constructor(address tokenAddress_,
+            uint8 firstReleasePercentage_,
+            uint64 delayAfterFirstRelease_,
+            uint8 numberOfPeriodicClaim_,
+            uint64 periodicClaimDuration_) {
+        _tokenContract = ERC20(tokenAddress_);
         _isOpenedForClaim = false;
-        _firstReleasePercentage = firstReleasePercentage;
-        _delayAfterFirstRelease = delayAfterFirstRelease;
-        _numberOfPeriodicClaim = numberOfPeriodicClaim;
+        _firstReleasePercentage = firstReleasePercentage_;
+        _delayAfterFirstRelease = delayAfterFirstRelease_;
+        _numberOfPeriodicClaim = numberOfPeriodicClaim_;
         _periodicClaimPercentage = SafeCast.toUint8(SafeMath.sub(100, _firstReleasePercentage)
                                                             .div(_numberOfPeriodicClaim));
-        _periodicClaimDuration = periodicClaimDuration;
+        _periodicClaimDuration = periodicClaimDuration_;
+
+        /**
+         * @dev If total claimable amount of a specific claimer were smaller than _minimumTotalClaimableAmount,
+         * either the first claim (release) amount or periodic claim amount of that claimer might be 0 (due to integer division).
+         * This vesting contract doesn't allow those 2 amounts to be 0 at the moment.
+         */
+        _minimumTotalClaimableAmount =
+            SafeMath.div(100, _firstReleasePercentage <= _periodicClaimPercentage ? _firstReleasePercentage : _periodicClaimPercentage)
+                    .add(1);
     }
 
     function openClaim() public onlyOwner {
@@ -89,6 +99,13 @@ contract Vesting is Ownable {
 
     function addClaimer(address claimerAddress, uint256 claimableAmount) external onlyOwner {
         require(_claimerList[claimerAddress].totalClaimableAmount == 0, "Claimer already exists");
+
+        string memory errorMessage = string(bytes.concat("Claimable amount must be at least ",
+                                                        abi.encodePacked(_minimumTotalClaimableAmount),
+                                                        " ",
+                                                        bytes(_tokenContract.symbol()) ));  // Just string concatenate
+        require(claimableAmount >= _minimumTotalClaimableAmount, errorMessage);
+
         Claimer memory claimer = Claimer(claimerAddress, claimableAmount, claimableAmount, 0, 0);
         _claimerList[claimerAddress] = claimer;
         emit AddClaimer(claimerAddress, claimableAmount);
@@ -111,7 +128,7 @@ contract Vesting is Ownable {
             require(block.timestamp.sub(claimer.lastClaimTime) >= _periodicClaimDuration, "Elapsed time is not enough since last claim");
             claimedAmount = claimer.remainingClaimableAmount;
         } else
-            revert();
+            revert("Claimer has claimed all tokens");
 
         claimer.remainingClaimableAmount -= claimedAmount;
         claimer.claimedTimes++;
