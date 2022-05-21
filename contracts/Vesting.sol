@@ -41,7 +41,7 @@ contract Vesting is Ownable {
     /**
      * @param claimerAddress claimer's address
      * @param claimedTimes number of times the claimer has claimed including this claim (equals 1 at first claim (release), 2 at second claim,..)
-     * @param amount amount of token of this claim
+     * @param amount amount of tokens of this claim
      * @param timestamp timestamp of this claim, as seconds since unix epoch
      */
     event Claim(address indexed claimerAddress, uint8 indexed claimedTimes, uint256 amount, uint64 timestamp);
@@ -111,11 +111,12 @@ contract Vesting is Ownable {
         emit AddClaimer(claimerAddress, claimableAmount);
     }
 
-    function claim() external onlyWhenOpenedForClaim {
-        Claimer storage claimer = _claimerList[msg.sender];
-        require(claimer.totalClaimableAmount != 0, "Claimer not found");
-        uint256 claimedAmount = 0;
-        
+    /**
+     * @dev Calculate the amount of tokens of this claim, also throw if time requirements are false
+     * @param claimer the claimer
+     * @return claimedAmount the amount of tokens of this claim
+     */
+    function _calculateClaimedAmount(Claimer storage claimer) private view returns (uint256 claimedAmount) {
         if (claimer.claimedTimes == 0) {
             claimedAmount = claimer.totalClaimableAmount.mul(firstReleasePercentage).div(100);
         } else if (claimer.claimedTimes == 1) {
@@ -129,7 +130,13 @@ contract Vesting is Ownable {
             claimedAmount = claimer.remainingClaimableAmount;
         } else
             revert("Claimer has claimed all tokens");
+    }
 
+    function claim() external onlyWhenOpenedForClaim {
+        Claimer storage claimer = _claimerList[msg.sender];
+        require(claimer.totalClaimableAmount != 0, "Claimer not found");
+
+        uint256 claimedAmount = _calculateClaimedAmount(claimer);
         claimer.remainingClaimableAmount -= claimedAmount;
         claimer.claimedTimes++;
         claimer.lastClaimTime = SafeCast.toUint64(block.timestamp);
