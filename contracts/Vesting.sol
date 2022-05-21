@@ -60,17 +60,20 @@ contract Vesting is Ownable {
             uint64 delayAfterFirstRelease_,
             uint8 numberOfPeriodicClaim_,
             uint64 periodicClaimDuration_) {
+
         tokenContract = ERC20(tokenAddress_);
-        isOpenedForClaim = false;
         firstReleasePercentage = firstReleasePercentage_;
         delayAfterFirstRelease = delayAfterFirstRelease_;
         numberOfPeriodicClaim = numberOfPeriodicClaim_;
-        periodicClaimPercentage = SafeCast.toUint8(SafeMath.sub(100, firstReleasePercentage)
-                                                            .div(numberOfPeriodicClaim));
         periodicClaimDuration = periodicClaimDuration_;
 
+        isOpenedForClaim = false;
+
+        periodicClaimPercentage = SafeCast.toUint8(SafeMath.sub(100, firstReleasePercentage)
+                                                            .div(numberOfPeriodicClaim));
+
         /**
-         * @dev If total claimable amount of a specific claimer were smaller than minimumTotalClaimableAmount,
+         * NOTE If total claimable amount of a specific claimer were smaller than minimumTotalClaimableAmount,
          * either the first claim (release) amount or periodic claim amount of that claimer might be 0 (due to integer division).
          * This vesting contract doesn't allow those 2 amounts to be 0 at the moment.
          */
@@ -81,16 +84,18 @@ contract Vesting is Ownable {
 
     function openClaim() public onlyOwner {
         isOpenedForClaim = true;
+
         emit OpenClaim(SafeCast.toUint64(block.timestamp));
     }
 
     function closeClaim() public onlyOwner {
         isOpenedForClaim = false;
+
         emit CloseClaim(SafeCast.toUint64(block.timestamp));
     }
 
     /**
-     * @dev Nhắn anh Hùng: em cảm thấy hàm fundVest k cần, tại token owner có thể gọi transfer để chuyển token trực tiếp cho Vesting contract,
+     * NOTE Nhắn anh Hùng: em cảm thấy hàm fundVest k cần, tại token owner có thể gọi transfer để chuyển token trực tiếp cho Vesting contract,
      * phải approve rồi tranferFrom mất công hơn k cần thiết
      */
     function fundVest(uint256 amount) external onlyOwner {
@@ -108,6 +113,7 @@ contract Vesting is Ownable {
 
         Claimer memory claimer = Claimer(claimerAddress, claimableAmount, claimableAmount, 0, 0);
         _claimerList[claimerAddress] = claimer;
+
         emit AddClaimer(claimerAddress, claimableAmount);
     }
 
@@ -119,15 +125,19 @@ contract Vesting is Ownable {
     function _calculateClaimedAmount(Claimer storage claimer) private view returns (uint256 claimedAmount) {
         if (claimer.claimedTimes == 0) {
             claimedAmount = claimer.totalClaimableAmount.mul(firstReleasePercentage).div(100);
+
         } else if (claimer.claimedTimes == 1) {
             require(block.timestamp.sub(claimer.lastClaimTime) >= delayAfterFirstRelease, "Elapsed time is not enough since first release");
             claimedAmount = claimer.totalClaimableAmount.mul(periodicClaimPercentage).div(100);
+
         } else if (claimer.claimedTimes > 1 && claimer.claimedTimes < numberOfPeriodicClaim) {
             require(block.timestamp.sub(claimer.lastClaimTime) >= periodicClaimDuration, "Elapsed time is not enough since last claim");
             claimedAmount = claimer.totalClaimableAmount.mul(periodicClaimPercentage).div(100);
+
         } else if (claimer.claimedTimes == numberOfPeriodicClaim) {
             require(block.timestamp.sub(claimer.lastClaimTime) >= periodicClaimDuration, "Elapsed time is not enough since last claim");
             claimedAmount = claimer.remainingClaimableAmount;
+            
         } else
             revert("Claimer has claimed all tokens");
     }
@@ -137,10 +147,13 @@ contract Vesting is Ownable {
         require(claimer.totalClaimableAmount != 0, "Claimer not found");
 
         uint256 claimedAmount = _calculateClaimedAmount(claimer);
+
         claimer.remainingClaimableAmount -= claimedAmount;
         claimer.claimedTimes++;
         claimer.lastClaimTime = SafeCast.toUint64(block.timestamp);
+
         tokenContract.transfer(claimer.addr, claimedAmount);
+
         emit Claim(claimer.addr, claimer.claimedTimes, claimedAmount, claimer.lastClaimTime);
     }
 }
